@@ -1,0 +1,13 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AzureAI": {
+    "Endpoint": "https://<your-sandbox>.openai.azure.com/",
+    "DeploymentName": "gpt-4o-mini",
+    "ApiKey": ""
+  }
+}

@@ -125,11 +125,16 @@ PublishScripts/
 # NEVER commit API keys, passwords, certificates, or connection strings.
 #
 # Best practice for this project:
-#   • Use `dotnet user-secrets` for local development secrets.
-#   • Use environment variables or Azure Key Vault in CI/CD and production.
-#   • appsettings.Development.json is committed with PLACEHOLDER values only.
-#     Replace placeholders with real values using user-secrets or env vars.
+#   • appsettings.json           → COMMITTED  (base config, placeholders only)
+#   • appsettings.*.json         → IGNORED    (environment overrides with secrets)
+#   • Use `dotnet user-secrets` or environment variables for local dev secrets.
+#   • Use Azure Key Vault or CI/CD secret stores for production.
 # -----------------------------------------------------------------------------
+
+# Environment-specific appsettings contain real endpoints and API keys.
+# Only the base appsettings.json (no secrets) is committed.
+appsettings.*.json
+
 .env
 .env.*
 !.env.example
