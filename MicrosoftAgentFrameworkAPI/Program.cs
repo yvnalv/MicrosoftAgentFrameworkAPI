@@ -1,9 +1,12 @@
-using Azure.AI.Projects;
+using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Extensions.AI;
 using MicrosoftAgentFrameworkAPI.Agents;
 using MicrosoftAgentFrameworkAPI.Agents.Workflows;
 using MicrosoftAgentFrameworkAPI.Services;
+using OpenAI;
+using OpenAI.Chat;
+using System.ClientModel;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,8 +21,8 @@ builder.Services.AddSingleton<UserMemoryService>();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 6: Hosting — register the agent via IHostApplicationBuilder.AddAIAgent
-// This replaces the manual AddSingleton<AIAgent> from Phases 1-4 and makes the
-// agent resolvable by name (keyed service) across all controllers.
+// Uses Chat Completions API (OpenAI.Chat.ChatClient) instead of the Responses
+// API so this works with standalone Azure OpenAI endpoints (/openai/v1).
 // ─────────────────────────────────────────────────────────────────────────────
 builder.AddAIAgent(
     "main-agent",
@@ -38,12 +41,20 @@ builder.AddAIAgent(
             AIFunctionFactory.Create(AgentTools.GetWeatherForecast),
         };
 
-        return new AIProjectClient(new Uri(endpoint), new ApiKeyTokenCredential(apiKey))
-            .AsAIAgent(
-                model: deploymentName,
-                instructions: "You are a friendly and helpful assistant. Use the available tools when the user asks about weather. Keep your answers concise.",
-                name: agentName,
-                tools: tools);
+        IChatClient chatClient = new ChatClient(
+            deploymentName,
+            new ApiKeyCredential(apiKey),
+            new OpenAIClientOptions { Endpoint = new Uri(endpoint) }
+        ).AsIChatClient();
+
+        return new ChatClientAgent(
+            chatClient,
+            instructions: "You are a friendly and helpful assistant. Use the available tools when the user asks about weather. Keep your answers concise.",
+            name: agentName,
+            description: "",
+            tools: tools,
+            loggerFactory: null,
+            services: null);
     })
     .WithInMemorySessionStore();   // Phase 6: managed session store via hosting layer
 
@@ -65,22 +76,3 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
-
-// ---------------------------------------------------------------------------
-// Wraps a static API key as a TokenCredential so it can be passed to
-// AIProjectClient (which accepts Azure.Core.TokenCredential via implicit
-// conversion to System.ClientModel.AuthenticationTokenProvider).
-// The key is sent as:  Authorization: Bearer {apiKey}
-// This matches Azure AI Foundry project API keys.
-// ---------------------------------------------------------------------------
-file sealed class ApiKeyTokenCredential(string apiKey) : Azure.Core.TokenCredential
-{
-    private readonly Azure.Core.AccessToken _token = new(apiKey, DateTimeOffset.MaxValue);
-
-    public override Azure.Core.AccessToken GetToken(
-        Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) => _token;
-
-    public override ValueTask<Azure.Core.AccessToken> GetTokenAsync(
-        Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
-        ValueTask.FromResult(_token);
-}
