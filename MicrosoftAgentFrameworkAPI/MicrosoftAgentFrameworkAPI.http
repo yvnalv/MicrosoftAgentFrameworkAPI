@@ -1,0 +1,123 @@
+@MicrosoftAgentFrameworkAPI_HostAddress = http://localhost:5122
+
+### [Existing] Weather Forecast (template endpoint)
+GET {{MicrosoftAgentFrameworkAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+
+### [Phase 1] Run agent — basic question
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/agent/run
+Content-Type: application/json
+
+{ "message": "What is the largest city in France?" }
+
+###
+
+### [Phase 1] Stream agent response — fun fact
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/agent/run-stream
+Content-Type: application/json
+
+{ "message": "Tell me a one-sentence fun fact about the Eiffel Tower." }
+
+###
+
+### [Phase 2] Agent calls GetWeather tool automatically
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/agent/run
+Content-Type: application/json
+
+{ "message": "What is the weather like in Amsterdam?" }
+
+###
+
+### [Phase 2] Agent calls GetWeatherForecast tool automatically
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/agent/run
+Content-Type: application/json
+
+{ "message": "Give me a 5-day forecast for Tokyo." }
+
+###
+
+### [Phase 3] Step 1 — Create a new session
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions
+
+###
+
+### [Phase 3] Step 2 — First turn (replace <sessionId> with the ID from Step 1)
+# @name turn1
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions/<sessionId>/run
+Content-Type: application/json
+
+{ "message": "My name is Alice and I love hiking." }
+
+###
+
+### [Phase 3] Step 3 — Second turn (agent should remember Alice's name and hobby)
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions/<sessionId>/run
+Content-Type: application/json
+
+{ "message": "What do you remember about me?" }
+
+###
+
+### [Phase 3] Step 4 — List all active sessions
+GET {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions
+
+###
+
+### [Phase 3] Step 5 — Delete the session
+DELETE {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions/<sessionId>
+
+###
+
+### [Phase 4] Step 1 — Create a session (same endpoint as Phase 3)
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions
+
+###
+
+### [Phase 4] Step 2 — Tell the agent your name (memory is extracted automatically)
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions/<sessionId>/run
+Content-Type: application/json
+
+{ "message": "Hi! My name is Alice and I love hiking." }
+
+###
+
+### [Phase 4] Step 3 — Ask something unrelated (agent should still address you by name)
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions/<sessionId>/run
+Content-Type: application/json
+
+{ "message": "What is 2 + 2?" }
+
+###
+
+### [Phase 4] Step 4 — Inspect what was stored in memory
+GET {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions/<sessionId>/memory
+
+###
+
+### [Phase 5] Run the text processing workflow (uppercase → reverse)
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/workflow/run
+Content-Type: application/json
+
+{ "text": "Hello, World! This is Agent Framework." }
+
+###
+
+### [Phase 6] Verify agent is resolved from DI by key (same endpoint, now keyed via AddAIAgent)
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/agent/run
+Content-Type: application/json
+
+{ "message": "What is 7 times 6?" }
+
+###
+
+### [Phase 6] Verify session is resolved from DI by key (same endpoint, now keyed via AddAIAgent)
+POST {{MicrosoftAgentFrameworkAPI_HostAddress}}/api/sessions
+
+###
+
+### [Phase 6] OpenAPI spec — shows all registered endpoints (DI-hosted agent visible)
+GET {{MicrosoftAgentFrameworkAPI_HostAddress}}/openapi/v1.json
+
+###
