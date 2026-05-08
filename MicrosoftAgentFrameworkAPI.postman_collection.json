@@ -1,0 +1,944 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Microsoft Agent Framework API",
+    "description": "Complete Postman collection for testing all 6 phases of the Microsoft Agent Framework API built with ASP.NET Core 10.0.\n\n## Quick Start\n1. Import this file into Postman (File → Import)\n2. Start the API: `dotnet run --project MicrosoftAgentFrameworkAPI`\n3. The `base_url` collection variable is pre-set to `http://localhost:5122`\n4. Run requests in numbered order within each phase folder\n\n## Collection Variables\n- `base_url` — API server address (change if running on a different port)\n- `sessionId` — Auto-populated by the 'Create Session' requests via test scripts\n\n## Phase Overview\n| Phase | Feature | Endpoint Prefix |\n|-------|---------|----------------|\n| 1 | Basic Agent | /api/agent |\n| 2 | Agent Tools | /api/agent |\n| 3 | Multi-Turn Sessions | /api/sessions |\n| 4 | Memory & Persistence | /api/sessions/{id}/memory |\n| 5 | Workflows | /api/workflow |\n| 6 | DI Hosting | All (DI-backed) |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5122",
+      "type": "string",
+      "description": "Base URL of the running API. Default: http://localhost:5122"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated by the Create Session request test scripts. Do not set manually."
+    }
+  ],
+  "item": [
+    {
+      "name": "Phase 1 — Basic Agent",
+      "description": "Your First Agent (Tutorial Step 1).\n\nCreates an AIAgent backed by Azure OpenAI and exposes it over HTTP. Tests a simple Q&A and Server-Sent Events (SSE) streaming.",
+      "item": [
+        {
+          "name": "Run Agent — Basic Question",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"What is the largest city in France?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/agent/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "run"]
+            },
+            "description": "Sends a single message to the agent and receives a complete JSON response.\n\nExpected response:\n```json\n{ \"response\": \"Paris is the largest city in France...\" }\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has \"response\" field', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('response');",
+                  "    pm.expect(json.response).to.be.a('string').and.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('Response mentions Paris', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.response.toLowerCase()).to.include('paris');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stream Agent Response (SSE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"Tell me a one-sentence fun fact about the Eiffel Tower.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/agent/run-stream",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "run-stream"]
+            },
+            "description": "Streams the agent response as Server-Sent Events (SSE). Each token chunk is prefixed with `data: `.\n\n**Note:** Postman buffers SSE until the stream ends. To see true streaming behaviour use `curl`:\n```bash\ncurl -N -X POST http://localhost:5122/api/agent/run-stream \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"message\":\"Fun fact about Eiffel Tower\"}'\n```\n\nExpected body (example):\n```\ndata: The\ndata:  Eiffel\ndata:  Tower\n...\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/event-stream', function () {",
+                  "    var ct = pm.response.headers.get('Content-Type');",
+                  "    pm.expect(ct).to.include('text/event-stream');",
+                  "});",
+                  "",
+                  "pm.test('Response body contains SSE data chunks', function () {",
+                  "    pm.expect(pm.response.text()).to.include('data:');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 2 — Agent with Tools",
+      "description": "Add Tools (Tutorial Step 2).\n\nThe agent is given two callable tools decorated with [Description]:\n- `GetWeather(location)` — simulated current weather\n- `GetWeatherForecast(location)` — simulated 5-day forecast\n\nThe agent calls these automatically when the user asks about weather.",
+      "item": [
+        {
+          "name": "Agent Calls GetWeather Tool",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"What is the weather like in Amsterdam?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/agent/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "run"]
+            },
+            "description": "The agent detects weather intent, calls `GetWeather(\"Amsterdam\")`, and returns a natural-language response with the temperature.\n\nExpected response: mentions Amsterdam and contains temperature (°C or °F)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has \"response\" field', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('response');",
+                  "});",
+                  "",
+                  "pm.test('Response mentions Amsterdam', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.response.toLowerCase()).to.include('amsterdam');",
+                  "});",
+                  "",
+                  "pm.test('Response contains temperature data', function () {",
+                  "    var json = pm.response.json();",
+                  "    var body = json.response;",
+                  "    var hasTemp = body.includes('\\u00b0C') || body.includes('\\u00b0F') ||",
+                  "                  body.toLowerCase().includes('temperature') ||",
+                  "                  body.toLowerCase().includes('celsius') ||",
+                  "                  body.toLowerCase().includes('fahrenheit');",
+                  "    pm.expect(hasTemp).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agent Calls GetWeatherForecast Tool",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"Give me a 5-day forecast for Tokyo.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/agent/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "run"]
+            },
+            "description": "The agent calls `GetWeatherForecast(\"Tokyo\")` and presents a 5-day forecast.\n\nExpected response: mentions Tokyo and references multiple days."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response mentions Tokyo', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.response.toLowerCase()).to.include('tokyo');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 3 — Multi-Turn Sessions",
+      "description": "Multi-Turn Conversations (Tutorial Step 3).\n\nMaintains conversation context across multiple HTTP calls using AgentSession. Run requests in order 1 → 5.\n\n**The sessionId is automatically captured** from request 1 and used in requests 2–5.",
+      "item": [
+        {
+          "name": "1. Create Session",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"]
+            },
+            "description": "Creates a new `AgentSession` and returns its ID.\n\nThe test script automatically saves `sessionId` to the collection variable so subsequent requests use it.\n\nExpected response:\n```json\n{ \"sessionId\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\" }\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response has sessionId — auto-saved to collection variable', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('sessionId');",
+                  "    pm.expect(json.sessionId).to.be.a('string').and.not.empty;",
+                  "    pm.collectionVariables.set('sessionId', json.sessionId);",
+                  "    console.log('sessionId captured:', json.sessionId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. First Turn — Introduce Yourself",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"My name is Alice and I love hiking.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{sessionId}}/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", "{{sessionId}}", "run"]
+            },
+            "description": "First turn in the session. The agent stores the conversation history inside the AgentSession."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has \"response\" field', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('response');",
+                  "    pm.expect(json.response).to.be.a('string').and.not.empty;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Second Turn — Test Context Recall",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"What do you remember about me?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{sessionId}}/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", "{{sessionId}}", "run"]
+            },
+            "description": "Second turn — tests that the AgentSession retained context from turn 1.\n\nExpected response: mentions 'Alice' and 'hiking' from the previous message."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Agent remembers name \"Alice\"', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.response.toLowerCase()).to.include('alice');",
+                  "});",
+                  "",
+                  "pm.test('Agent remembers hobby \"hiking\"', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.response.toLowerCase()).to.include('hiking');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. List All Active Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"]
+            },
+            "description": "Returns an array of all active session IDs held in-memory.\n\nExpected: array containing the current `sessionId`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response is an array', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('Current sessionId appears in the list', function () {",
+                  "    var json = pm.response.json();",
+                  "    var sid = pm.collectionVariables.get('sessionId');",
+                  "    pm.expect(json).to.include(sid);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Delete Session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{sessionId}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", "{{sessionId}}"]
+            },
+            "description": "Deletes the session and its associated memory. The session ID is invalid after this call.\n\nExpected: 204 No Content."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 No Content', function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 4 — Memory & Persistence",
+      "description": "Memory (Tutorial Step 4).\n\nThe `UserMemoryService` extracts structured facts from user messages:\n- `\"my name is X\"` → stores `user_name`\n- `\"I love X\"` / `\"I like X\"` → stores `user_hobby`\n\nOn every subsequent turn these facts are injected as a system message so the agent always addresses the user by name.\n\nRun requests in order 1 → 4.",
+      "item": [
+        {
+          "name": "1. Create Session (Memory Test)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"]
+            },
+            "description": "Creates a fresh session. The sessionId is auto-saved to the collection variable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('sessionId', json.sessionId);",
+                  "console.log('sessionId captured for Phase 4:', json.sessionId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Introduce Yourself (Facts Are Extracted)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"Hi! My name is Alice and I love hiking.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{sessionId}}/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", "{{sessionId}}", "run"]
+            },
+            "description": "After this request, `UserMemoryService` stores:\n```json\n{ \"user_name\": \"Alice\", \"user_hobby\": \"hiking\" }\n```\nVerify via the 'Inspect Stored Memory' request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Unrelated Question (Agent Uses Your Name)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"What is 2 + 2?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{sessionId}}/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", "{{sessionId}}", "run"]
+            },
+            "description": "This message says nothing about names. However, the controller injects:\n```\nSystem: The user's name is Alice. Always address them by name. The user enjoys hiking.\n```\n\nThe agent should address the user as Alice in the response."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Agent addresses user as Alice despite unrelated question', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.response.toLowerCase()).to.include('alice');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Inspect Stored Memory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{sessionId}}/memory",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", "{{sessionId}}", "memory"]
+            },
+            "description": "Returns the raw facts dictionary stored by `UserMemoryService` for this session.\n\nExpected response:\n```json\n{\n  \"user_name\": \"Alice\",\n  \"user_hobby\": \"hiking\"\n}\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Memory contains user_name = Alice', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('user_name');",
+                  "    pm.expect(json.user_name).to.equal('Alice');",
+                  "});",
+                  "",
+                  "pm.test('Memory contains user_hobby = hiking', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('user_hobby');",
+                  "    pm.expect(json.user_hobby.toLowerCase()).to.include('hiking');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 5 — Workflows",
+      "description": "Workflows (Tutorial Step 5).\n\nChains two executor steps sequentially:\n1. **UppercaseExecutor** — converts input to uppercase\n2. **ReverseTextExecutor** — reverses the uppercase string\n\nThe response shows each step's output.",
+      "item": [
+        {
+          "name": "Run Text Pipeline — Standard Input",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"text\": \"Hello, World! This is Agent Framework.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/workflow/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "workflow", "run"]
+            },
+            "description": "Runs the text through the two-step pipeline.\n\nExpected response:\n```json\n{\n  \"input\": \"Hello, World! This is Agent Framework.\",\n  \"steps\": [\n    { \"step\": \"UppercaseExecutor\", \"output\": \"HELLO, WORLD! THIS IS AGENT FRAMEWORK.\" },\n    { \"step\": \"ReverseTextExecutor\", \"output\": \".KROWEMARF TNEGA SI SIHT !DLROW ,OLLEH\" }\n  ]\n}\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has input and steps array', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('input');",
+                  "    pm.expect(json).to.have.property('steps');",
+                  "    pm.expect(json.steps).to.be.an('array').and.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('UppercaseExecutor output is correct', function () {",
+                  "    var json = pm.response.json();",
+                  "    var step = json.steps.find(function(s) { return s.step === 'UppercaseExecutor'; });",
+                  "    pm.expect(step).to.not.be.undefined;",
+                  "    pm.expect(step.output).to.equal('HELLO, WORLD! THIS IS AGENT FRAMEWORK.');",
+                  "});",
+                  "",
+                  "pm.test('ReverseTextExecutor output is correct', function () {",
+                  "    var json = pm.response.json();",
+                  "    var step = json.steps.find(function(s) { return s.step === 'ReverseTextExecutor'; });",
+                  "    pm.expect(step).to.not.be.undefined;",
+                  "    pm.expect(step.output).to.equal('.KROWEMARF TNEGA SI SIHT !DLROW ,OLLEH');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run Text Pipeline — Simple Sanity Check",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"text\": \"hello\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/workflow/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "workflow", "run"]
+            },
+            "description": "Simple sanity check: `hello` → `HELLO` → `OLLEH`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('UppercaseExecutor returns HELLO', function () {",
+                  "    var json = pm.response.json();",
+                  "    var step = json.steps.find(function(s) { return s.step === 'UppercaseExecutor'; });",
+                  "    pm.expect(step.output).to.equal('HELLO');",
+                  "});",
+                  "",
+                  "pm.test('ReverseTextExecutor returns OLLEH', function () {",
+                  "    var json = pm.response.json();",
+                  "    var step = json.steps.find(function(s) { return s.step === 'ReverseTextExecutor'; });",
+                  "    pm.expect(step.output).to.equal('OLLEH');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run Text Pipeline — Empty String (Edge Case)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"text\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/workflow/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "workflow", "run"]
+            },
+            "description": "Edge case: empty string input. Both steps should return empty strings without errors."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK (empty input handled gracefully)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 6 — Hosting (DI)",
+      "description": "Host Your Agent (Tutorial Step 6).\n\nAll agents and workflows are registered via `builder.AddAIAgent()` / `builder.AddWorkflow()` and resolved using `[FromKeyedServices]`.\n\nThe existing endpoints are functionally identical but now fully DI-managed. This folder verifies DI resolution works end-to-end.",
+      "item": [
+        {
+          "name": "Verify Keyed Agent Resolves from DI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"What is 7 times 6?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/agent/run",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "run"]
+            },
+            "description": "Confirms that `AgentController` successfully resolves `AIAgent` via `[FromKeyedServices(\"main-agent\")]`.\n\nExpected: response contains '42'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Agent is DI-resolved and responds correctly (42)', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.response).to.include('42');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Keyed Session Resolves from DI",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"]
+            },
+            "description": "Confirms that `SessionController` resolves `AIAgent` via `[FromKeyedServices(\"main-agent\")]`.\n\nExpected: 201 with a valid sessionId."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response has sessionId (DI working)', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('sessionId');",
+                  "    pm.collectionVariables.set('sessionId', json.sessionId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "OpenAPI Spec (Dev Only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/openapi/v1.json",
+              "host": ["{{base_url}}"],
+              "path": ["openapi", "v1.json"]
+            },
+            "description": "Returns the auto-generated OpenAPI v3 specification. Only available when `ASPNETCORE_ENVIRONMENT=Development`.\n\nShows all registered paths including `/api/agent/run`, `/api/sessions`, `/api/workflow/run`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Valid OpenAPI 3 document', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('openapi');",
+                  "    pm.expect(json.openapi).to.match(/^3\\./);",
+                  "    pm.expect(json).to.have.property('paths');",
+                  "});",
+                  "",
+                  "pm.test('Agent endpoint is registered in spec', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.paths).to.have.property('/api/agent/run');",
+                  "});",
+                  "",
+                  "pm.test('Sessions endpoint is registered in spec', function () {",
+                  "    var json = pm.response.json();",
+                  "    var hasSessionPath = Object.keys(json.paths).some(function(p) {",
+                  "        return p.includes('/api/sessions');",
+                  "    });",
+                  "    pm.expect(hasSessionPath).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Utilities",
+      "description": "Diagnostic and template endpoints.",
+      "item": [
+        {
+          "name": "Weather Forecast — Template Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/weatherforecast",
+              "host": ["{{base_url}}"],
+              "path": ["weatherforecast"]
+            },
+            "description": "The original ASP.NET Core template endpoint. Returns 5 simulated weather forecast records.\n\nThe logic in this controller is the inspiration for the `GetWeather` and `GetWeatherForecast` agent tools in Phase 2."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Returns array of 5 forecasts', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.be.an('array');",
+                  "    pm.expect(json.length).to.equal(5);",
+                  "});",
+                  "",
+                  "pm.test('Each forecast has date, temperatureC, summary', function () {",
+                  "    var json = pm.response.json();",
+                  "    json.forEach(function(f) {",
+                  "        pm.expect(f).to.have.property('date');",
+                  "        pm.expect(f).to.have.property('temperatureC');",
+                  "        pm.expect(f).to.have.property('summary');",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
