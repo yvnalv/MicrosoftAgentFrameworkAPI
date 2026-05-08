@@ -1,5 +1,4 @@
 using Azure.AI.Projects;
-using Azure.Identity;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Extensions.AI;
 using MicrosoftAgentFrameworkAPI.Agents;
@@ -30,6 +29,8 @@ builder.AddAIAgent(
         var endpoint = config["AzureAI:Endpoint"]
             ?? throw new InvalidOperationException("AzureAI:Endpoint is not configured.");
         var deploymentName = config["AzureAI:DeploymentName"] ?? "gpt-4o-mini";
+        var apiKey = config["AzureAI:ApiKey"]
+            ?? throw new InvalidOperationException("AzureAI:ApiKey is not configured.");
 
         var tools = new[]
         {
@@ -37,7 +38,7 @@ builder.AddAIAgent(
             AIFunctionFactory.Create(AgentTools.GetWeatherForecast),
         };
 
-        return new AIProjectClient(new Uri(endpoint), new DefaultAzureCredential())
+        return new AIProjectClient(new Uri(endpoint), new ApiKeyTokenCredential(apiKey))
             .AsAIAgent(
                 model: deploymentName,
                 instructions: "You are a friendly and helpful assistant. Use the available tools when the user asks about weather. Keep your answers concise.",
@@ -64,3 +65,22 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// ---------------------------------------------------------------------------
+// Wraps a static API key as a TokenCredential so it can be passed to
+// AIProjectClient (which accepts Azure.Core.TokenCredential via implicit
+// conversion to System.ClientModel.AuthenticationTokenProvider).
+// The key is sent as:  Authorization: Bearer {apiKey}
+// This matches Azure AI Foundry project API keys.
+// ---------------------------------------------------------------------------
+file sealed class ApiKeyTokenCredential(string apiKey) : Azure.Core.TokenCredential
+{
+    private readonly Azure.Core.AccessToken _token = new(apiKey, DateTimeOffset.MaxValue);
+
+    public override Azure.Core.AccessToken GetToken(
+        Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) => _token;
+
+    public override ValueTask<Azure.Core.AccessToken> GetTokenAsync(
+        Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(_token);
+}
